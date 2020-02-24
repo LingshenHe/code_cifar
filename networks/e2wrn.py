@@ -179,7 +179,7 @@ class WideBasic(enn.EquivariantModule):
 
 
 class Wide_ResNet(torch.nn.Module):
-    def __init__(self, depth, widen_factor, dropout_rate, num_classes=100,
+    def __init__(self, depth, widen_factor, dropout_rate=0., num_classes=100,
                  N: int = 8,
                  r: int = 1,
                  f: bool = True,
@@ -428,7 +428,7 @@ def wrn28_10_d8d4d1(**kwargs):
     The model's block are respectively D8, D4 and D1 equivariant.
 
     """
-    return Wide_ResNet(28, 10, 0.3, initial_stride=1, N=8, f=True, r=3, **kwargs)
+    return Wide_ResNet(depth=28, widen_factor=10, initial_stride=1, N=8, f=True, r=3, **kwargs)
 
 
 def wrn28_7_d8d4d1(**kwargs):
