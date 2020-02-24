@@ -202,10 +202,10 @@ def test(epoch):
 
         # Save checkpoint when best model
         acc = 100.*correct/total
-        print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.2f%%" %(epoch, loss.item(), acc))
+        print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.4f%%" %(epoch, loss.item(), acc))
 
         if acc > best_acc:
-            print('| Saving Best model...\t\t\tTop1 = %.2f%%' %(acc))
+            print('| Saving Best model...\t\t\tTop1 = %.4f%%' %(acc))
             state = {
                     # 'net':net.module if use_cuda else net,
                     'net':net.state_dict(),
