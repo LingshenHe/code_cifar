@@ -21,13 +21,14 @@ from torch.autograd import Variable
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR-10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning_rate')
-parser.add_argument('--net_type', default='wide-resnet', type=str, help='model')
+parser.add_argument('--net_type', default='wrn28_10_d8d4d1', type=str, help='model')
 parser.add_argument('--depth', default=28, type=int, help='depth of model')
 parser.add_argument('--widen_factor', default=10, type=int, help='width of model')
 parser.add_argument('--dropout', default=0.3, type=float, help='dropout_rate')
 parser.add_argument('--dataset', default='cifar10', type=str, help='dataset = [cifar10/cifar100]')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--testOnly', '-t', action='store_true', help='Test mode with the saved model')
+parser.add_argument('--fixparams', default=False, help='fix parameters of model')
 args = parser.parse_args()
 
 # Hyper Parameter settings
@@ -77,10 +78,13 @@ def getNetwork(args):
         net = ResNet(args.depth, num_classes)
         file_name = 'resnet-'+str(args.depth)
     elif (args.net_type == 'wide-resnet'):
-        net = Wide_ResNet(args.depth, args.widen_factor, args.dropout, num_classes)
+        net = Wide_ResNet0(args.depth, args.widen_factor, args.dropout, num_classes)
         file_name = 'wide-resnet-'+str(args.depth)+'x'+str(args.widen_factor)
+    elif (args.net_type =='wrn28_10_d8d4d1'):
+        net =wrn28_10_d8d4d1(fixparams=args.fixparams)
+        file_name='wrn28_10_d8d4d1'+str(args.fixparams)
     else:
-        print('Error : Network should be either [LeNet / VGGNet / ResNet / Wide_ResNet')
+        print('Error : Network should be either [LeNet / VGGNet / ResNet / Wide_ResNet/wrn28_10_d8d4d1')
         sys.exit(0)
 
     return net, file_name
@@ -134,8 +138,10 @@ if args.resume:
 else:
     print('| Building net type [' + args.net_type + ']...')
     net, file_name = getNetwork(args)
-    net.apply(conv_init)
-
+    if (args.net_type !='wrn28_10_d8d4d1'):
+        net.apply(conv_init)
+model_parameters = filter(lambda p: p.requires_grad, net.parameters())
+params = sum([np.prod(p.size()) for p in model_parameters])
 if use_cuda:
     net.cuda()
     net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
@@ -201,7 +207,8 @@ def test(epoch):
         if acc > best_acc:
             print('| Saving Best model...\t\t\tTop1 = %.2f%%' %(acc))
             state = {
-                    'net':net.module if use_cuda else net,
+                    # 'net':net.module if use_cuda else net,
+                    'net':net.state_dict(),
                     'acc':acc,
                     'epoch':epoch,
             }
@@ -214,6 +221,7 @@ def test(epoch):
             best_acc = acc
 
 print('\n[Phase 3] : Training model')
+print('Trainable parameters: {}'.format(params))
 print('| Training Epochs = ' + str(num_epochs))
 print('| Initial Learning Rate = ' + str(args.lr))
 print('| Optimizer = ' + str(optim_type))
