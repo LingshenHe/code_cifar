@@ -24,7 +24,7 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning_rate')
 parser.add_argument('--net_type', default='wrn28_10_d8d4d1', type=str, help='model')
 parser.add_argument('--depth', default=28, type=int, help='depth of model')
 parser.add_argument('--widen_factor', default=10, type=int, help='width of model')
-parser.add_argument('--dropout', default=0.3, type=float, help='dropout_rate')
+parser.add_argument('--dropout', default=0., type=float, help='dropout_rate')
 parser.add_argument('--dataset', default='cifar10', type=str, help='dataset = [cifar10/cifar100]')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--testOnly', '-t', action='store_true', help='Test mode with the saved model')
@@ -95,7 +95,7 @@ if (args.testOnly):
     assert os.path.isdir('checkpoint'), 'Error: No checkpoint directory found!'
     _, file_name = getNetwork(args)
     checkpoint = torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7')
-    net = checkpoint['net']
+    net = _.load_state_dict(torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7'))
 
     if use_cuda:
         net.cuda()
@@ -132,7 +132,7 @@ if args.resume:
     assert os.path.isdir('checkpoint'), 'Error: No checkpoint directory found!'
     _, file_name = getNetwork(args)
     checkpoint = torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7')
-    net = checkpoint['net']
+    net = _.load_state_dict(torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7'))
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
 else:
@@ -229,10 +229,8 @@ print('| Optimizer = ' + str(optim_type))
 elapsed_time = 0
 for epoch in range(start_epoch, start_epoch+num_epochs):
     start_time = time.time()
-
     train(epoch)
     test(epoch)
-
     epoch_time = time.time() - start_time
     elapsed_time += epoch_time
     print('| Elapsed time : %d:%02d:%02d'  %(cf.get_hms(elapsed_time)))
