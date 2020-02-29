@@ -1,6 +1,5 @@
 import torch
 import e2cnn
-from e2cnn import gspaces
 import torch.nn as nn
 import numpy as np
 from numpy import linalg as la
@@ -92,8 +91,8 @@ def rotating(t):
 
 
 
-def scale():
-    #TODO
+# def scale():
+#     #TODO
 
 
 
@@ -110,6 +109,7 @@ def scale():
 class diff_rep:
     ### n represent the order of the rotation
     def __init__(self,n,flip=False):
+      
         self.rep_e=[]
         self.rep_m=[]
         self.order=1
@@ -175,6 +175,7 @@ class c_regular:
         self.rep_e[0:n-1,1:n]=torch.eye(n-1)
         self.rep_e[n-1,0]=1.
         self.dim=n
+    
 
 
 class d_regular:
@@ -276,7 +277,7 @@ class conv(nn.Module):
             list.append(nn.Conv2d(dim_in*i.size(2),dim_out*i.size(1),1, stride=stride,padding=0, bias=False))
 
         self.convlist=nn.ModuleList(list)
-        if (group==None):
+        if (group is None):
             group=dim_out
         if scale==False:
             self.gn=iden()
@@ -287,6 +288,26 @@ class conv(nn.Module):
         for i in range(1,len(self.convlist)):
             y=y+self.gn(self.convlist[i](x))
         return y
+    
+
+
+
+
+
+
+class GroupBatchNorm(nn.Module):
+    def __init__(self, num_rep, dim_rep, affine=True, track_running_stats=True):
+        super(GroupBatchNorm,self).__init__()
+        self.gn=nn.BatchNorm2d(num_rep*dim_rep, affine=affine, track_running_stats=track_running_stats)
+        self.weight=torch.nn.Parameter(torch.ones(num_rep))
+        self.bias=torch.nn.Parameter(torch.ones(num_rep))
+        self.num_rep=num_rep
+    
+    def forward(self, x):
+        self.gn.weight=torch.cat([self.weight]*self.num_rep)
+        self.gn.bias=torch.cat([self.bias]*self.num_rep)
+        return self.gn(x)
+
 
 
 
@@ -334,7 +355,7 @@ class group:
             out_rep: a string indicate the representation type of output feature
             return the bases of the interwiners. of shape (bases x dim_out_rep x dim_in_rep x kernel_size x kernel_size)
         '''
-        if(self.bases[order][(in_rep,out_rep)]!=None):
+        if(self.bases[order][(in_rep,out_rep)] is not None):
             return self.bases[order][(in_rep,out_rep)]
         in_rep_=self.rep[in_rep]
         out_rep_=self.rep[out_rep]
@@ -346,11 +367,9 @@ class group:
         else:
             df=self.diff_rep[order]
             w=self.coef(in_rep_.rep_e,out_rep_.rep_e,df)
-        print(torch.matrix_rank(w))
         # w=w.to(torch.float64)
         w=solve(w).transpose(0,1)
         # w=w.to(torch.float32)
-        
         dim_in_rep=in_rep_.dim
         dim_out_rep=out_rep_.dim
         n=w.size(0)
@@ -379,15 +398,59 @@ class group:
         return conv( base, dim_in, dim_out, stride, exist, scale, group)
 
 
+    def norm(self, rep, num_rep, affine=True, track_running_stats=True):
+        '''
+            num_rep: number of representation in the input
+            rep: a string indicate the type of representation
+            other argument is the same with the standard BatchNorm
+        '''
+        dim_rep=self.rep[rep].dim
+        return GroupBatchNorm(num_rep, dim_rep, affine, track_running_stats)
+    
+
+    def cuda(self, device=None):
+        if(device is None):
+            for i in range(5):
+                for key,value in self.bases[i].items():
+                    if(value is not None):
+                        self.bases[i][key]=value.cuda()
+        else:
+            for i in range(5):
+                for key,value in self.bases[i].items():
+                    if(value is not None):
+                        self.bases[i][key].cuda(device)
+
+
+
+
+
+# a=torch.randn(12,16,28,28).cuda()
+# g=group(8,True)
+# net=g.conv([0,1,2,3,4],'regular','regular',1,1, scale=True)
+# g.cuda()
+# net=g.conv([0,1,2,3,4],'regular','regular',1,1, scale=True)
+# y=net(a)
+# print(y.shape)
+# f.eval()
+# print(f.gn.training)
         
-  
-x=torch.randn(1,16,28,28)
-a=rotating(45)
-x_1=rotate(x,a)              
-g=group(8,True)
-net=g.conv([0,1,2,3,4],'regular','trivial',10,10, scale=True)
-y=net(x)
-print(y.shape)
+class A(nn.Module):
+    def __init__(self):
+        super(A, self).__init__()
+        self.tensor=torch.randn(10,10)
+        self.conv=torch.nn.Conv2d(2,2,1)
+    def forward(self, x):
+        return x
+a=A()
+a.cuda()
+print(a.tensor.device)
+# x=torch.randn(1,1,28,28)
+# a=rotating(45)
+# x_1=rotate(x,a)              
+# g=group(8,True)
+# net=g.conv([],'trivial','trivial',1,1, scale=True)
+# y=net(x)
+# print(y.shape)
 # y_1=net(x_1)
 # print(rotate(y[0,0].reshape(1,1,y.size(2),y.size(2)),a))
 # print(y_1[0,1])
