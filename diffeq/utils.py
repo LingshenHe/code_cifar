@@ -24,7 +24,7 @@ def numpy_rotate(x,a):
     ### x is the input image of shape: bxcxhxw
     ### a is the rotational matrix
     height,width=x.shape[-2:]
-    print(height,width)
+    # print(height,width)
     cen=np.array([(height-1)/2.,(width-1)/2.])
     y=np.zeros_like(x)
     
@@ -52,14 +52,16 @@ def numpy_rotate(x,a):
 def rotate(x,a):
     ### x is the input image of shape: bxcxhxw
     ### a is the rotational matrix
+
+    a=a.to(x.device)
     height,width=x.shape[-2:]
-    cen=torch.tensor([(height-1)/2.,(width-1)/2.])
+    cen=torch.tensor([(height-1)/2.,(width-1)/2.]).to(x.device)
     y=torch.zeros_like(x)
     
     for i in range(height):
         for j in range(width):
-            f=torch.tensor([0.])
-            t=torch.tensor([i,j]).to(torch.float32)
+            f=torch.tensor([0.],device=x.device)
+            t=torch.tensor([i,j],device=x.device).to(torch.float32)
             c=torch.matmul(torch.inverse(a),t-cen)+cen
             z=interpolate(c[0],c[1])
             if(z[0]>=0 and z[0]<height and z[2]>=0 and z[2]<width):
@@ -110,8 +112,8 @@ class diff_rep:
     ### n represent the order of the rotation
     def __init__(self,n,flip=False):
       
-        self.rep_e=[]
-        self.rep_m=[]
+        self.rep_e=[torch.tensor([[1.]])]
+        self.rep_m=[torch.tensor([[1.]])]
         self.order=1
         self.n=n
         t=-2*np.pi/n
@@ -127,7 +129,7 @@ class diff_rep:
     def next(self):
         if(self.order==4):
             print('Order is less than 5')
-        a=self.rep_e[self.order-1]
+        a=self.rep_e[self.order]
         self.order=self.order+1
         b=torch.zeros(self.order+1,self.order+1)
         for i in range(self.order):
@@ -141,7 +143,7 @@ class diff_rep:
         b[self.order,self.order]=self.g_e[1,1]*a[self.order-1,i]
         self.rep_e.append(b)
         if(self.flip==True):
-            a=self.rep_m[self.order-2]
+            a=self.rep_m[self.order-1]
             b=torch.zeros(self.order+1,self.order+1)
             for i in range(self.order):
                 for j in range(1,self.order):
@@ -162,9 +164,9 @@ class diff_rep:
         while(i>self.order):
             self.next()
         if(self.flip==True):
-            return self.rep_e[i-1],self.rep_m[i-1]
+            return self.rep_e[i],self.rep_m[i]
         else:
-            return self.rep_e[i-1]
+            return self.rep_e[i]
 
 
 class c_regular:
@@ -172,8 +174,8 @@ class c_regular:
         self.type='cn'
         self.n=n
         self.rep_e=torch.zeros(n,n)
-        self.rep_e[0:n-1,1:n]=torch.eye(n-1)
-        self.rep_e[n-1,0]=1.
+        self.rep_e[1:n,0:n-1]=torch.eye(n-1)
+        self.rep_e[0,n-1]=1.
         self.dim=n
     
 
@@ -183,10 +185,10 @@ class d_regular:
         self.n=n
         self.type='dn'
         self.rep_e=torch.zeros(2*n,2*n)
-        self.rep_e[0:n-1,1:n]=torch.eye(n-1)
-        self.rep_e[n-1,0]=1.
-        self.rep_e[n+1:2*n,n:2*n-1]=torch.eye(n-1)
-        self.rep_e[n,2*n-1]=1.
+        self.rep_e[1:n,0:n-1]=torch.eye(n-1)
+        self.rep_e[0,n-1]=1.
+        self.rep_e[n:2*n-1,n+1:2*n]=torch.eye(n-1)
+        self.rep_e[2*n-1,n]=1.
         self.rep_m=torch.zeros(2*n,2*n)
         self.rep_m[0:n,n:2*n]=torch.eye(n)
         self.rep_m[n:2*n,0:n]=torch.eye(n)
@@ -204,7 +206,6 @@ class trivial:
 
 def solve(A):
     n=torch.matrix_rank(A)
-    print(n)
     u,s,v=torch.svd(A,some=True)
     return v[::,n:A.size(1)]
 
@@ -212,17 +213,17 @@ def solve(A):
 
 def solve_(A):
     G=la.pinv(a)
-    print(G.shape)
     w=np.eye(A.shape[1])-np.matmul(G,A)
     n=la.matrix_rank(w)
     u,s,v=la.svd(w)
     return u[::,0:n]
 
 
+
 class iden(nn.Module):
     def __init__(self):
         super(iden,self).__init__()
-    
+
     
     
     def forward(self,x):
@@ -231,59 +232,72 @@ class iden(nn.Module):
 
 
 
-class conv_base(nn.Module):
-    def __init__(self, base, dim_in, dim_out, stride=1):
-        ''' 
-            bases: number of basis kernel in a specified type
-            param: parameter tensor of shape dim_in x dim_out x bases
-            base: bases of a specified type of kernel, shape of  bases x dim_rep_out x dim_rep_in x kernel_size x kernel_size
-        '''
-        super(conv_base,self).__init__()
-        self.dim_in=dim_in
-        self.dim_out=dim_out
-        self.dim_rep_in=base.size(2)
-        self.dim_rep_out=base.size(1)
-        self.base=base
-        self.bases=base.size(0)
-        self.parma=torch.nn.Parameter(torch.randn(dim_in, dim_out, self.bases))
-        self.stride=stride
-        self.size=self.base.size(4)
+# class conv_base(nn.Module):
+#     def __init__(self, Group, orderlist, in_rep, out_rep, num_in, num_out, stride=1):
+#         ''' 
+
+#             Group: group containing the base
+#             bases: number of basis kernel in a specified type
+#             param: parameter tensor of shape dim_in x dim_out x bases
+#             base: bases of a specified type of kernel, shape of  bases x dim_rep_out x dim_rep_in x kernel_size x kernel_size
+#         '''
+#         super(conv_base,self).__init__()
+#         self.Group=Group
+#         self.in_rep=in_rep
+#         self.out_rep=out_rep
+#         self.num_in=num_in
+#         self.num_out=num_out
+#         self.orderlist=orderlist
+#         self.base=[]
+#         for i in orderlist:
+#             self.base.append(self.Group.base(i, in_rep, out_rep))
+#         self.base=nn.Parameter(torch.cat(self.base),requires_grad=False)        
+#         self.dim_rep_in=self.base.size(2)
+#         self.dim_rep_out=self.base.size(1)
+#         self.bases=self.base.size(0)
+#         self.param=torch.nn.Parameter(torch.randn(num_in, num_out, self.bases))
+#         self.stride=stride
+#         self.size=self.base.size(4)
+       
     
-    
-    def forward(self,x):
-        #get the kernel of the conv from the base
-        kernel=torch.einsum('ijk,kmnpq->injmpq',self.parma, self.base)\
-            .reshape(self.dim_out*self.dim_rep_out,self.dim_in*self.dim_rep_in,self.size,self.size)
-        return nn.functional.conv2d(x,kernel,bias=None, stride=self.stride, padding=math.floor(self.size/2))
+#     def forward(self,x):
+#         #get the kernel of the conv from the base
+#         kernel=torch.einsum('ijk,kmnpq->jminpq',self.param, self.base)\
+#             .reshape(self.num_out*self.dim_rep_out,self.num_in*self.dim_rep_in,self.size,self.size)
+#         return nn.functional.conv2d(x,kernel,bias=None, stride=self.stride, padding=math.floor(self.size/2))
 
 
 
 class conv(nn.Module):
-    def __init__(self, baselist, dim_in, dim_out, stride, exist, scale=False,group=None):
+    def __init__(self, Group, orderlist, in_rep, out_rep, num_in, num_out, stride, scale=False, group=None):
         '''
-            baselist: a list consists of base in conv_base.
+            orderlist: a list consist of order of differential operator
             scale: the net is scale equivariant or not.
             group: is the arguments num_groups in the GroupNorm, it is dim_in as default.
             exist: if exist = True, then the 0 order differential operator is in the conv.
             the other argument is the same with conv_base.
         '''
         super(conv,self).__init__()
-        self.dim_in=dim_in
-        self.dim_out=dim_out
+        self.num_in=num_in
+        self.num_out=num_out
+        self.orderlist=orderlist
+        self.in_rep=in_rep
+        self.out_rep=out_rep
         list=[]
-        for i in baselist:
-            list.append(conv_base(i, dim_in, dim_out,  stride))
-        if(exist==True):
-            list.append(nn.Conv2d(dim_in*i.size(2),dim_out*i.size(1),1, stride=stride,padding=0, bias=False))
-
+        for i in orderlist:
+            list.append(conv_base(Group.base(i, in_rep, out_rep), num_in, num_out,  stride))
+      
         self.convlist=nn.ModuleList(list)
         if (group is None):
-            group=dim_out
+            group=num_out
         if scale==False:
             self.gn=iden()
         else:
-            self.gn=torch.nn.GroupNorm(group,i.size(1)*dim_out)
+            self.gn=torch.nn.GroupNorm(group,Group.rep[out_rep].dim*num_out)
+    
+    
     def forward(self,x):
+        ### I think the program is slow compare to the e2cnn is due to the for loop here
         y=self.gn(self.convlist[0](x))
         for i in range(1,len(self.convlist)):
             y=y+self.gn(self.convlist[i](x))
@@ -292,34 +306,173 @@ class conv(nn.Module):
 
 
 
+class conv_fast(nn.Module):
+    def __init__(self, base, num_in, num_out, stride):
+        super(conv_fast, self).__init__()
+        self.base=torch.nn.Parameter(base, requires_grad= False)
+        self.bases=self.base.size(0)
+        self.size=self.base.size(4)
+        self.stride=stride
+        self.param=torch.nn.Parameter(kaiming_init(base, num_in, num_out))
+        self.dim_rep_in=self.base.size(2)
+        self.dim_rep_out=self.base.size(1)
+        self.num_in=num_in
+        self.num_out=num_out
+
+
+
+    def forward(self,x):
+            #get the kernel of the conv from the base
+            kernel=torch.einsum('ijk,kmnpq->jminpq',self.param, self.base)\
+                .reshape(self.num_out*self.dim_rep_out,self.num_in*self.dim_rep_in,self.size,self.size)
+            return nn.functional.conv2d(x,kernel,bias=None, stride=self.stride, padding=math.floor(self.size/2))
+
+
+
+
+
+
+
+
+
+
+class conv_base(nn.Module):
+    def __init__(self, base, num_in, num_out, stride=1):
+        ''' 
+
+            Group: group containing the base
+            bases: number of basis kernel in a specified type
+            param: parameter tensor of shape dim_in x dim_out x bases
+            base: bases of a specified type of kernel, shape of  bases x dim_rep_out x dim_rep_in x kernel_size x kernel_size
+        '''
+        super(conv_base,self).__init__()
+        self.base=torch.nn.Parameter(base,requires_grad=False)
+        self.num_in=num_in
+        self.num_out=num_out
+        # self.base=torch.nn.Parameter(self.Group.base(order, in_rep, out_rep),requires_grad=False)
+        self.dim_rep_in=self.base.size(2)
+        self.dim_rep_out=self.base.size(1)
+        self.bases=self.base.size(0)
+        self.param=torch.nn.Parameter(kaiming_init(base, num_in, num_out))
+        self.stride=stride
+        self.size=self.base.size(4)
+        self.kernel=torch.einsum('ijk,kmnpq->jminpq',self.param, self.base)\
+            .reshape(self.num_out*self.dim_rep_out,self.num_in*self.dim_rep_in,self.size,self.size)
+    
+    def forward(self,x):
+        #get the kernel of the conv from the base
+        kernel=torch.einsum('ijk,kmnpq->jminpq',self.param, self.base)\
+            .reshape(self.num_out*self.dim_rep_out,self.num_in*self.dim_rep_in,self.size,self.size)
+        return nn.functional.conv2d(x,kernel,bias=None, stride=self.stride, padding=math.floor(self.size/2))
+
+
+
+
+
+
+# class GroupBatchNorm(nn.Module):
+#     def __init__(self, num_rep, dim_rep, affine=True, track_running_stats=True):
+#         super(GroupBatchNorm,self).__init__()
+#         self.gn=nn.BatchNorm2d(num_rep*dim_rep, affine=affine, track_running_stats=track_running_stats)
+#         self.weight=torch.nn.Parameter(torch.ones(num_rep,1))
+#         self.bias=torch.nn.Parameter(torch.zeros(num_rep,1))
+#         self.num_rep=num_rep
+#         self.dim_rep=dim_rep
+    
+#     def forward(self, x):
+#         self.gn.weight=torch.nn.Parameter(torch.cat([self.weight]*self.dim_rep, dim=1).reshape(-1))
+#         self.gn.bias=torch.nn.Parameter(torch.cat([self.bias]*self.dim_rep,dim=1).reshape(-1))
+#         return self.gn(x)
 
 
 
 class GroupBatchNorm(nn.Module):
-    def __init__(self, num_rep, dim_rep, affine=True, track_running_stats=True):
+    def __init__(self, num_rep, dim_rep, affine=False, momentum=0.1, track_running_stats=True):
         super(GroupBatchNorm,self).__init__()
-        self.gn=nn.BatchNorm2d(num_rep*dim_rep, affine=affine, track_running_stats=track_running_stats)
-        self.weight=torch.nn.Parameter(torch.ones(num_rep))
-        self.bias=torch.nn.Parameter(torch.ones(num_rep))
+        self.momentum=momentum
+        self.gn=nn.BatchNorm2d(num_rep*dim_rep, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
+        self.weight=torch.nn.Parameter(torch.ones(num_rep,1))
+        self.bias=torch.nn.Parameter(torch.zeros(num_rep,1))
         self.num_rep=num_rep
+        self.dim_rep=dim_rep
     
     def forward(self, x):
-        self.gn.weight=torch.cat([self.weight]*self.num_rep)
-        self.gn.bias=torch.cat([self.bias]*self.num_rep)
-        return self.gn(x)
+        x=self.gn(x)
+        weight=torch.cat([self.weight]*self.dim_rep, dim=1).reshape(1,self.dim_rep*self.num_rep,1,1)
+        bias=torch.cat([self.bias]*self.dim_rep,dim=1).reshape(1,self.dim_rep*self.num_rep,1,1)
+        x=weight*x+bias
+        return x
+
+
+
+class GroupRestrict(nn.Module):
+    def __init__(self, n, num_in_rep, flip=False):
+        '''
+            n: number of rotations in the group
+            num_in_rep: number of regular representation in the input
+            flip: is the group DN
+        '''
+        super(GroupRestrict,self).__init__()
+        self.n=n
+        self.num_in_rep=num_in_rep
+        if (flip==True):
+            n=2*n
+        tr=torch.zeros(n,n)
+        for i in range(n):
+            if(i%2==0):
+                tr[int(i/2),i]=1
+            else:
+                tr[int(n/2+(i-1)/2),i]=1
+        self.dim=n
+        self.param=torch.nn.Parameter(tr, False)
+    
+    
+    def forward(self, x):
+        
+        x=torch.einsum('ij,bkjmn->bkimn', self.param, x.reshape(x.size(0), self.num_in_rep, self.dim, x.size(2), x.size(3)))\
+            .reshape(x.shape)
+        return x
+
+
+
+# class GroupPooling(nn.Module):
+#     def __init__(self, type)
+
+
+def kaiming_init(base, num_in, num_out, normal=True):
+    '''
+        base: the base of the conv_base or conv_fast
+        num_in: number of representation in of the input in conv_base of conv_fast
+        num_out: number of representation in of the output in conv_base of conv_fast
+        normal: using the normal or constant initialization
+    '''
+    f=torch.sum(base*base)*num_in/(base.size(1))
+    print(f)
+    if(normal==True):
+        weight=torch.sqrt(1/f)*torch.randn(num_in, num_out, base.size(0))
+    else:
+        weight=torch.sqrt(12/f)*(torch.rand(num_in, num_out, base.size(0))-0.5)
+    return weight
 
 
 
 
 
 
-class group:
+
+
+
+
+
+class Group:
     def __init__(self, n, flip=False):
         '''
             n: n means the group has n pure rotational element.
             flip: wether the group include flip element
         '''
-        self.dif_ker={'1':torch.tensor([[[0.,0.,0.],[-0.5,0.,0.5],[0.,0.,0.]],[[0.,0.5,0.],[0.,0.,0.],[0.,-0.5,0.]]]),\
+        self.dif_ker={\
+    '0':torch.tensor([[[1.]]]),\
+    '1':torch.tensor([[[0.,0.,0.],[-0.5,0.,0.5],[0.,0.,0.]],[[0.,0.5,0.],[0.,0.,0.],[0.,-0.5,0.]]]),\
     '2':torch.tensor([[[0.,0.,0.],[1.,-2.,1.],[0.,0.,0.]],[[-0.25,0,0.25],[0.,0.,0.],[0.25,0.,-0.25]],[[0.,1.,0.],[0.,-2.,0.],[0.,1.,0.]]]),\
     '3':torch.tensor([[[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.],[-0.5,1.,0.,-1.,0.5],[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.]],\
         [[0.,0.,0.,0.,0.],[0.,0.5,-1.,0.5,0.],[0.,0.,0.,0.,0.],[0.,-0.5,1.,-0.5,0.],[0.,0.,0.,0.,0.]],\
@@ -330,16 +483,31 @@ class group:
             [[0.,0.,0.,0.,0.],[-0.25,0.5,0.,-0.5,0.25],[0.,0.,0.,0.,0.],[0.25,-0.5,0.,0.5,-0.25],[0.,0.,0.,0.,0.]],\
                 [[0.,0.,0.,0.,0.],[0.,1.,-2.,1.,0.],[0.,-2.,4.,-2.,0.],[0.,1.,-2.,1.,0.],[0.,0.,0.,0.,0.]],\
                 [[0.,-0.25,0.,0.25,0.],[0.,0.5,0.,-0.5,0.],[0.,0.,0.,0.,0.],[0.,-0.5,0.,0.5,0.],[0.,0.25,0.,-0.25,0.]],\
-                    [[0.,0.,1.,0.,0.],[0.,0.,-4.,0.,0.],[0.,0.,6.,0.,0.],[0.,0.,-4.,0.,0.],[0.,0.,1.,0.,0.]]])}
+                    [[0.,0.,1.,0.,0.],[0.,0.,-4.,0.,0.],[0.,0.,6.,0.,0.],[0.,0.,-4.,0.,0.],[0.,0.,1.,0.,0.]]]),\
+    '5':torch.tensor([\
+        [[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.],[0.,0.,1.,0.,0.],[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.]]]),\
+    '6':torch.tensor([\
+        [[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.],[0.,-0.5,0.,0.5,0.],[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.]],\
+        [[0.,0.,0.,0.,0.],[0.,0.,0.5,0.,0.],[0.,0.,0.,0.,0.],[0.,0.,-0.5,0.,0.],[0.,0.,0.,0.,0.]]]),\
+    '7':torch.tensor([\
+        [[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.],[0.,1.,-2.,1.,0.],[0.,0.,0.,0.,0.],[0.,0.,0.,0.,0.]],\
+            [[0.,0.,0.,0.,0.],[0.,-0.25,0,0.25,0.],[0.,0.,0.,0.,0.],[0.,0.25,0.,-0.25,0.],[0.,0.,0.,0.,0.]],\
+                [[0.,0.,0.,0.,0.],[0.,0.,1.,0.,0.],[0.,0.,-2.,0.,0.],[0.,0.,1.,0.,0.],[0.,0.,0.,0.,0.]]])}
         self.n=n
         self.flip=flip
+        self.dim=n
+        if (flip==True):
+            self.dim=self.dim*2
         self.diff_rep=diff_rep(n, flip)
         self.rep={'regular':None, 'trivial':trivial()}
         if(flip==True):
             self.rep['regular']=d_regular(n)
         else:
             self.rep['regular']=c_regular(n)
-        self.bases=[{('regular','regular'):None, ('regular','trivial'):None, ('trivial','trivial'):None,('trivial','regular'):None}]*5
+        self.bases=[]
+        for i in range(8):
+            self.bases.append({('regular','regular'):None, ('regular','trivial'):None, ('trivial','trivial'):None,('trivial','regular'):None})
+        self.fast_base={('regular','regular'):None, ('regular','trivial'):None, ('trivial','trivial'):None,('trivial','regular'):None}
     
     def coef(self, in_rep, out_rep, df):
         d=kronecker(in_rep.transpose(0,1),df)
@@ -360,25 +528,32 @@ class group:
         in_rep_=self.rep[in_rep]
         out_rep_=self.rep[out_rep]
         if(self.flip==True):
-            df1,df2=self.diff_rep[order]
+            df1,df2=self.diff_rep[order%5]
             w1=self.coef(in_rep_.rep_e,out_rep_.rep_e,df1)
             w2=self.coef(in_rep_.rep_m,out_rep_.rep_m,df2)
             w=torch.cat((w1,w2))
         else:
-            df=self.diff_rep[order]
+            df=self.diff_rep[order%5]
             w=self.coef(in_rep_.rep_e,out_rep_.rep_e,df)
         # w=w.to(torch.float64)
         w=solve(w).transpose(0,1)
         # w=w.to(torch.float32)
+        # print(torch.matrix_rank(w))
         dim_in_rep=in_rep_.dim
         dim_out_rep=out_rep_.dim
         n=w.size(0)
-        w=w.reshape(n,dim_out_rep,dim_in_rep,order+1)
+        w=w.reshape(n,dim_out_rep,dim_in_rep,order%5+1)
         self.bases[order][(in_rep,out_rep)]=torch.einsum('ijkl,lmn->ijkmn',w,self.dif_ker[str(order)])
+        # qr decomposation to make the basis orthogonal with each other.
+        shape=self.bases[order][(in_rep,out_rep)].shape
+        self.bases[order][(in_rep,out_rep)],_=torch.qr(self.bases[order][(in_rep,out_rep)].reshape(shape[0],-1).transpose(0,1))
+        self.bases[order][(in_rep,out_rep)]=self.bases[order][(in_rep,out_rep)].transpose(0,1).reshape(shape)
         return self.bases[order][(in_rep, out_rep)]
     
-    def conv(self, orderlist, in_rep, out_rep, dim_in, dim_out, stride=1, scale=False,group=None):
+    def conv(self, orderlist, in_type, out_type, stride=1, scale=False,group=None):
         '''
+            in_type: a list indicate the type of input feature, of the form [in_rep, dim_in]
+            out_type: a list indicate the type of output feature, of the form [out_rep, dim_out]
             orderlist: a list containing the order of differential operator
             in_rep: a string indicate the input feature type
             out_rep: a string indicate the output feature type
@@ -388,24 +563,48 @@ class group:
             group: an arguement in the GroupNorm
             return a convolutiaon layer with input channels as dim_in_rep*dim_in and output channels as dim_out_rep*dim_out
         '''
-        exist=False
-        if 0 in orderlist:
-            exist=True
-            orderlist.remove(0)
-        base=[]
-        for i in orderlist:
-            base.append(self.base(i,in_rep, out_rep))
-        return conv( base, dim_in, dim_out, stride, exist, scale, group)
+        
+        in_rep,dim_in=in_type
+        out_rep,dim_out=out_type
+        return conv(self, orderlist , in_rep, out_rep, dim_in, dim_out, stride, scale, group)
+
+    
+    
+    def conv_fast(self, in_type, out_type, stride=1):
+        in_rep, num_in=in_type
+        out_rep, num_out=out_type
+        if (self.fast_base[(in_rep,out_rep)] is None):
+            base=[]
+            for i in range(3,8):
+                base.append(self.base(i,in_rep,out_rep))
+            base=torch.cat(base)
+            shape=base.shape
+            base,_=torch.qr(base.reshape(shape[0],-1).transpose(0,1))
+            base=base.transpose(0,1).reshape(shape)
+            self.fast_base[(in_rep,out_rep)]=base
+        else:
+            base=self.fast_base[(in_rep,out_rep)]
+        return conv_fast(base, num_in, num_out, stride)
 
 
-    def norm(self, rep, num_rep, affine=True, track_running_stats=True):
+    
+    # def conv_fast
+
+    # def conv_fast(self, in_type, out_type, stride=1):
+    #     in_rep, num_in=in_type
+    #     out_rep, num_out=out_type
+    #     return nn.Conv2d(num_in*self.rep[in_rep].dim, num_out*self.rep[out_rep].dim,3,stride=stride, padding=1, bias=False)
+
+
+    def norm(self, in_type, affine=True, momentum=0.1, track_running_stats=True):
         '''
             num_rep: number of representation in the input
             rep: a string indicate the type of representation
             other argument is the same with the standard BatchNorm
         '''
+        rep, num_rep=in_type
         dim_rep=self.rep[rep].dim
-        return GroupBatchNorm(num_rep, dim_rep, affine, track_running_stats)
+        return GroupBatchNorm(num_rep, dim_rep, affine, momentum, track_running_stats)
     
 
     def cuda(self, device=None):
@@ -418,15 +617,101 @@ class group:
             for i in range(5):
                 for key,value in self.bases[i].items():
                     if(value is not None):
-                        self.bases[i][key].cuda(device)
+                        self.bases[i][key]=value.cuda(device)
+
+
+    def Restrictlayer(self, in_type):
+        _,num_in_rep=in_type
+        return GroupRestrict(self.n ,num_in_rep, self.flip)
+
+
+    def RestrictGroup(self, order=1):
+        '''
+        order: an integer indicate how many restrict it do, group element decrease to 1/2 every time.
+        return: Group
+        '''
+            
+        return Group(n/(2**n), self.flip)
+
+  
+    # def Rotate(self, x , in_type):
+    #     x=rotate()
+# a=torch.randn(1,4,2,2)
+# b=torch.zeros(1,4,2,2)
+# for i in range(4):
+#     b[1,(i+1)%4]=
+                        
 
 
 
 
+def test():
+    a=torch.randn(1,1,28,28)
+    g=group(8,True)
+    for i in range(5):
 
-# a=torch.randn(12,16,28,28).cuda()
-# g=group(8,True)
-# net=g.conv([0,1,2,3,4],'regular','regular',1,1, scale=True)
+        net=g.conv([i],'trivial','regular',1,1, scale=True)
+        print(g.bases[i][('trivial','regular')])
+        y=net(a)
+        print(y.shape)
+n=10000
+k=2
+
+x=torch.randn(1,n,10,10)
+net=nn.Conv2d(n,k*2,5,padding=2)
+nn.init.kaiming_normal_(net.weight)
+y=net(x)**2
+print(torch.sum(y)/(y.size(0)*y.size(1)*y.size(2)*y.size(3)))
+# print(torch.sum(net.weight**2))
+print('ok')
+g=Group(k,True)
+net1=g.conv_fast(['regular',int(n/(2*k))],['regular',1])
+y1=(net1(x))**2
+print(torch.sum(y1)/(y1.size(0)*y1.size(1)*y1.size(2)*y1.size(3)))
+print(torch.sum(net1.base**2))
+
+# y=net1(x)
+# print(y)
+
+
+# test()
+# x=torch.randn(1,1,2,2)
+# g=Group(8, True)
+# a=torch.randn()
+
+
+
+# a=rotating(90)
+# x_1=rotate(x,a)
+# # # device=torch.device('cuda:8')
+# g=Group(4,False)
+# # net=g.conv_fast(['trivial',1],['regular',1])
+# net=g.conv_fast(['trivial',1],['regular',1])
+# strict=g.Restrictlayer(['regular',1])
+# y=rotate(net(x),a)
+# y_1=net(x_1)
+# print(y[0])
+# print(y_1[0])
+def test_time():
+    x=torch.randn(64,320,28,28)
+    g=Group(8,True)
+    net1=g.conv_fast(['regular',20],['regular',20])
+    net2=g.conv([0,1,2,3,4,5],['regular',20],['regular',20])
+    t1=time.time()
+    net1(x)
+    t2=time.time()
+    net2(x)
+    t3=time.time()
+    print(t2-t1)
+    print(t3-t2)
+# test_time()
+# print(x)
+# print(strict(x))
+# print('y',y[0,0])
+# print('y_1',y_1[0,1])
+# print(a)
+
+# print(g.bases[3][('trivial','regular')])
 # g.cuda()
 # net=g.conv([0,1,2,3,4],'regular','regular',1,1, scale=True)
 # y=net(a)
@@ -434,16 +719,16 @@ class group:
 # f.eval()
 # print(f.gn.training)
         
-class A(nn.Module):
-    def __init__(self):
-        super(A, self).__init__()
-        self.tensor=torch.randn(10,10)
-        self.conv=torch.nn.Conv2d(2,2,1)
-    def forward(self, x):
-        return x
-a=A()
-a.cuda()
-print(a.tensor.device)
+# class A(nn.Module):
+#     def __init__(self):
+#         super(A, self).__init__()
+#         self.tensor=torch.randn(10,10)
+#         self.conv=torch.nn.Conv2d(2,2,1)
+#     def forward(self, x):
+#         return x
+# a=A()
+# a.cuda()
+# print(a.tensor.device)
 # x=torch.randn(1,1,28,28)
 # a=rotating(45)
 # x_1=rotate(x,a)              

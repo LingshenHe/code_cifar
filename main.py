@@ -17,14 +17,15 @@ import argparse
 import datetime
 
 from networks import *
+from diffeq import *
 from torch.autograd import Variable
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR-10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning_rate')
-parser.add_argument('--net_type', default='wrn28_10_d8d4d1', type=str, help='model')
+parser.add_argument('--net_type', default='SR_wrn28_10_d8d4d4', type=str, help='model')
 parser.add_argument('--depth', default=28, type=int, help='depth of model')
 parser.add_argument('--widen_factor', default=10, type=int, help='width of model')
-parser.add_argument('--dropout', default=0., type=float, help='dropout_rate')
+parser.add_argument('--dropout', default=0.0, type=float, help='dropout_rate')
 parser.add_argument('--dataset', default='cifar10', type=str, help='dataset = [cifar10/cifar100]')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--testOnly', '-t', action='store_true', help='Test mode with the saved model')
@@ -33,7 +34,7 @@ args = parser.parse_args()
 
 # Hyper Parameter settings
 use_cuda = torch.cuda.is_available()
-best_acc = 0
+best_acc = 0.
 start_epoch, num_epochs, batch_size, optim_type = cf.start_epoch, cf.num_epochs, cf.batch_size, cf.optim_type
 
 # Data Uplaod
@@ -81,8 +82,14 @@ def getNetwork(args):
         net = Wide_ResNet0(args.depth, args.widen_factor, args.dropout, num_classes)
         file_name = 'wide-resnet-'+str(args.depth)+'x'+str(args.widen_factor)
     elif (args.net_type =='wrn28_10_d8d4d1'):
-        net =wrn28_10_d8d4d1(dropout_rate=args.dropout, fixparams=args.fixparams)
-        file_name='wrn28_10_d8d4d1'+str(args.fixparams)
+        net =wrn28_10_d8d4d1(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='wrn28_10_d8d4d1'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type =='wrn28_10_d8d4d4'):
+        net =wrn28_10_d8d4d4(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='wrn28_10_d8d4d4'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type=='SR_wrn28_10_d8d4d4'):
+        net=SR_wrn28_10_d8d4d4(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='SR_wrn28_10_d8d4d4'+str(args.fixparams)+'dropout'+str(args.dropout)
     else:
         print('Error : Network should be either [LeNet / VGGNet / ResNet / Wide_ResNet/wrn28_10_d8d4d1')
         sys.exit(0)
@@ -95,7 +102,8 @@ if (args.testOnly):
     assert os.path.isdir('checkpoint'), 'Error: No checkpoint directory found!'
     _, file_name = getNetwork(args)
     checkpoint = torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7')
-    net = _.load_state_dict(torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7'))
+    # net = checkpoint['net']
+    net = _.load_state_dict(checkpoint['net'])
 
     if use_cuda:
         net.cuda()
@@ -105,19 +113,19 @@ if (args.testOnly):
     net.eval()
     net.training = False
     test_loss = 0
-    correct = 0
-    total = 0
+    correct = 0.
+    total = 0.
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
-            inputs, targets = Variable(inputs), Variable(targets)
+            #inputs, targets = Variable(inputs), Variable(targets)
             outputs = net(inputs)
 
             _, predicted = torch.max(outputs.data, 1)
             total += targets.size(0)
-            correct += predicted.eq(targets.data).cpu().sum()
+            correct += predicted.eq(targets.data).cpu().sum().to(torch.float)
 
         acc = 100.*correct/total
         print("| Test Result\tAcc@1: %.2f%%" %(acc))
@@ -132,14 +140,14 @@ if args.resume:
     assert os.path.isdir('checkpoint'), 'Error: No checkpoint directory found!'
     _, file_name = getNetwork(args)
     checkpoint = torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7')
-    net = _.load_state_dict(torch.load('./checkpoint/'+args.dataset+os.sep+file_name+'.t7'))
+    net = _.load_state_dict(checkpoint['net'])
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
 else:
     print('| Building net type [' + args.net_type + ']...')
     net, file_name = getNetwork(args)
-    if (args.net_type !='wrn28_10_d8d4d1'):
-        net.apply(conv_init)
+    #if (args.net_type !='wrn28_10_d8d4d1'):
+     #   net.apply(conv_init)
 model_parameters = filter(lambda p: p.requires_grad, net.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
 if use_cuda:
@@ -151,6 +159,7 @@ criterion = nn.CrossEntropyLoss()
 
 # Training
 def train(epoch):
+    torch.cuda.empty_cache()
     net.train()
     net.training = True
     train_loss = 0
@@ -163,7 +172,7 @@ def train(epoch):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda() # GPU settings
         optimizer.zero_grad()
-        inputs, targets = Variable(inputs), Variable(targets)
+        #inputs, targets = Variable(inputs), Variable(targets)
         outputs = net(inputs)               # Forward Propagation
         loss = criterion(outputs, targets)  # Loss
         loss.backward()  # Backward Propagation
@@ -172,12 +181,12 @@ def train(epoch):
         train_loss += loss.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
-        correct += predicted.eq(targets.data).cpu().sum()
+        correct += predicted.eq(targets.data).cpu().sum().to(torch.float)
 
         sys.stdout.write('\r')
         sys.stdout.write('| Epoch [%3d/%3d] Iter[%3d/%3d]\t\tLoss: %.4f Acc@1: %.3f%%'
                 %(epoch, num_epochs, batch_idx+1,
-                    (len(trainset)//batch_size)+1, loss.item(), 100.*correct/total))
+                    (len(trainset)//batch_size)+1, loss.item(), (100.*correct)/total))
         sys.stdout.flush()
 
 def test(epoch):
@@ -185,23 +194,24 @@ def test(epoch):
     net.eval()
     net.training = False
     test_loss = 0
-    correct = 0
-    total = 0
+    correct = 0.
+    total = 0.
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
-            inputs, targets = Variable(inputs), Variable(targets)
+            #inputs, targets = Variable(inputs), Variable(targets)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
 
             test_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
             total += targets.size(0)
-            correct += predicted.eq(targets.data).cpu().sum()
+            correct += predicted.eq(targets.data).cpu().sum().to(torch.float)
 
         # Save checkpoint when best model
-        acc = 100.*correct/total
+        acc = (100.0*correct)/total
+
         print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.4f%%" %(epoch, loss.item(), acc))
 
         if acc > best_acc:
@@ -212,9 +222,9 @@ def test(epoch):
                     'acc':acc,
                     'epoch':epoch,
             }
-            if not os.path.isdir('checkpoint'):
-                os.mkdir('checkpoint')
-            save_point = './checkpoint/'+args.dataset+os.sep
+            if not os.path.isdir('/home1/lshe/checkpoint'):
+                os.mkdir('/home1/lshe/checkpoint')
+            save_point = '/home1/lshe/checkpoint/'+args.dataset+os.sep
             if not os.path.isdir(save_point):
                 os.mkdir(save_point)
             torch.save(state, save_point+file_name+'.t7')
@@ -229,11 +239,14 @@ print('| Optimizer = ' + str(optim_type))
 elapsed_time = 0
 for epoch in range(start_epoch, start_epoch+num_epochs):
     start_time = time.time()
+
     train(epoch)
     test(epoch)
+
     epoch_time = time.time() - start_time
     elapsed_time += epoch_time
     print('| Elapsed time : %d:%02d:%02d'  %(cf.get_hms(elapsed_time)))
 
 print('\n[Phase 4] : Testing model')
 print('* Test results : Acc@1 = %.2f%%' %(best_acc))
+
