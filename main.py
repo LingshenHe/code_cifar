@@ -222,9 +222,9 @@ def test(epoch):
                     'acc':acc,
                     'epoch':epoch,
             }
-            if not os.path.isdir('/home1/lshe/checkpoint'):
-                os.mkdir('/home1/lshe/checkpoint')
-            save_point = '/home1/lshe/checkpoint/'+args.dataset+os.sep
+            if not os.path.isdir('/home/lshe/checkpoint'):
+                os.mkdir('/home/lshe/checkpoint')
+            save_point = '/home/lshe/checkpoint/'+args.dataset+os.sep
             if not os.path.isdir(save_point):
                 os.mkdir(save_point)
             torch.save(state, save_point+file_name+'.t7')
