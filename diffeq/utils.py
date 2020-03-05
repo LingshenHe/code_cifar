@@ -334,7 +334,6 @@ class conv_fast(nn.Module):
             #get the kernel of the conv from the base
             kernel=torch.einsum('ijk,kmnpq->jminpq',self.param, self.base)\
                 .reshape(self.num_out*self.dim_rep_out,self.num_in*self.dim_rep_in,self.size,self.size)
-            print(kernel)
             return nn.functional.conv2d(x,kernel,bias=None, stride=self.stride, padding=math.floor(self.size/2))
 
 

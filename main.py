@@ -22,7 +22,7 @@ from torch.autograd import Variable
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR-10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning_rate')
-parser.add_argument('--net_type', default='SR_wrn28_10_d8d4d4', type=str, help='model')
+parser.add_argument('--net_type', default='SR_wrn28_10_d8d8d8', type=str, help='model')
 parser.add_argument('--depth', default=28, type=int, help='depth of model')
 parser.add_argument('--widen_factor', default=10, type=int, help='width of model')
 parser.add_argument('--dropout', default=0.0, type=float, help='dropout_rate')
@@ -90,6 +90,9 @@ def getNetwork(args):
     elif (args.net_type=='SR_wrn28_10_d8d4d4'):
         net=SR_wrn28_10_d8d4d4(dropout_rate=args.dropout,fixparams=args.fixparams)
         file_name='SR_wrn28_10_d8d4d4'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type=='SR_wrn28_10_d8d8d8'):
+        net=SR_wrn28_10_d8d8d8(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='SR_wrn28_10_d8d8d8'+str(args.fixparams)+'dropout'+str(args.dropout)
     else:
         print('Error : Network should be either [LeNet / VGGNet / ResNet / Wide_ResNet/wrn28_10_d8d4d1')
         sys.exit(0)
@@ -148,7 +151,7 @@ else:
     net, file_name = getNetwork(args)
     #if (args.net_type !='wrn28_10_d8d4d1'):
      #   net.apply(conv_init)
-model_parameters = filter(lambda p: p.requires_grad, net.parameters())
+model_parameters = filter(lambda p: p.requires_grad, net.layer3.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
 if use_cuda:
     net.cuda()
@@ -231,6 +234,7 @@ def test(epoch):
             best_acc = acc
 
 print('\n[Phase 3] : Training model')
+print(args.net_type)
 print('Trainable parameters: {}'.format(params))
 print('| Training Epochs = ' + str(num_epochs))
 print('| Initial Learning Rate = ' + str(args.lr))

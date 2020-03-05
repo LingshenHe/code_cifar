@@ -6,11 +6,11 @@ import time
 import math
 from .utils import *
 import torch.nn.functional as F
-__all__=['SR_wrn28_10_d8d4d4']
+__all__=['SR_wrn28_10_d8d4d4', 'SR_wrn28_10_d8d8d8']
 
 
 
-def regular_feature_type(group, planes: int, fixparams: bool = True):
+def regular_feature_type(group, planes: int, fixparams: bool = False):
     """ build a regular feature map with the specified number of channels"""
     
 
@@ -25,7 +25,7 @@ def regular_feature_type(group, planes: int, fixparams: bool = True):
     return ['regular', planes]
 
 
-def trivial_feature_type(group, planes: int, fixparams: bool = True):
+def trivial_feature_type(group, planes: int, fixparams: bool = False):
     """ build a trivial feature map with the specified number of channels"""
     
     N=group.dim
@@ -107,7 +107,7 @@ class SR_Wide_ResNet(torch.nn.Module):
                  f: bool = True,
                  scale: bool = False,
                  deltaorth: bool = False,
-                 fixparams: bool = True,
+                 fixparams: bool = False,
                  initial_stride: int = 1,
                  ):
         r"""
@@ -319,5 +319,28 @@ def SR_wrn28_10_d8d4d4(**kwargs):
     """
     return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=2, **kwargs)
 
+def SR_wrn28_10_d8d8d8(**kwargs):
+    """Constructs a Wide ResNet 28-10 model
 
-    # class MNISTMODEL()
+    The model's block are respectively D8, D8 and D8 equivariant.
+
+    """
+    return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=0, **kwargs)
+
+def test():
+    net=SR_wrn28_10_d8d8d8(dropout_rate=0.)
+    # model_parameters = filter(lambda p: p.requires_grad, net.conv1.parameters())
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print(params)
+    # model_parameters = filter(lambda p: p.requires_grad, net.layer1.parameters())
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print(params)
+    # model_parameters = filter(lambda p: p.requires_grad, net.layer2.parameters())
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print(params)
+    model_parameters = filter(lambda p: p.requires_grad, net.layer3.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print(params)
+    print(len(net.grouplist))
+    
+#     # class MNISTMODEL()
