@@ -1,5 +1,4 @@
 import torch
-import e2cnn
 import torch.nn as nn
 import numpy as np
 from numpy import linalg as la
@@ -651,7 +650,7 @@ class Group:
 
     
     
-    def conv_fast(self, in_type, out_type, stride=1):
+    def conv_fast(self, in_type, out_type, stride=1, scale=False, group=None):
         '''
             in_type: a list indicate the type of input feature, of the form [in_rep, dim_in]
             out_type: a list indicate the type of output feature, of the form [out_rep, dim_out]
@@ -659,18 +658,21 @@ class Group:
         '''        
         in_rep, num_in=in_type
         out_rep, num_out=out_type
-        if (self.fast_base[(in_rep,out_rep)] is None):
-            base=[]
-            for i in range(3,8):
-                base.append(self.base(i,in_rep,out_rep))
-            base=torch.cat(base)
-            shape=base.shape
-            base,_=torch.qr(base.reshape(shape[0],-1).transpose(0,1))
-            base=base.transpose(0,1).reshape(shape)
-            self.fast_base[(in_rep,out_rep)]=base
+        if (scale==False):
+            if (self.fast_base[(in_rep,out_rep)] is None):
+                base=[]
+                for i in range(3,8):
+                    base.append(self.base(i,in_rep,out_rep))
+                base=torch.cat(base)
+                shape=base.shape
+                base,_=torch.qr(base.reshape(shape[0],-1).transpose(0,1))
+                base=base.transpose(0,1).reshape(shape)
+                self.fast_base[(in_rep,out_rep)]=base
+            else:
+                base=self.fast_base[(in_rep,out_rep)]
+            return conv_fast(base, num_in, num_out, stride)
         else:
-            base=self.fast_base[(in_rep,out_rep)]
-        return conv_fast(base, num_in, num_out, stride)
+            return conv(self, [0,1,2,3,4] , in_rep, out_rep, num_in, num_out, stride, scale, group)
 
 
     
