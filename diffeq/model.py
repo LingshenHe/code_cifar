@@ -19,7 +19,7 @@ def regular_feature_type(group, planes: int, fixparams: bool = False):
     if fixparams:
         planes *= math.sqrt(N)
     
-    planes = planes / N
+    planes = 2*planes / N
     planes = int(planes)
     
     return ['regular', planes]
@@ -260,7 +260,7 @@ class SR_Wide_ResNet(torch.nn.Module):
         inner_type = FIELD_TYPE["regular"](self.grouplist[-1], planes, fixparams=self._fixparams)
         
         if totrivial:
-            out_type = FIELD_TYPE["regular"](self.grouplist[-1], planes*4, fixparams=self._fixparams)
+            out_type = FIELD_TYPE["regular"](self.grouplist[-1], planes*2, fixparams=self._fixparams)
         else:
             out_type = FIELD_TYPE["regular"](self.grouplist[-1], planes, fixparams=self._fixparams)
         
