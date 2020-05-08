@@ -19,7 +19,7 @@ std = {
 # Only for cifar-10
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-def learning_rate(init, epoch):
+def learning_rate(init, epoch, warm):
     optim_factor = 0
     if(epoch > 160):
         optim_factor = 3
@@ -27,8 +27,10 @@ def learning_rate(init, epoch):
         optim_factor = 2
     elif(epoch > 60):
         optim_factor = 1
-
-    return init*math.pow(0.2, optim_factor)
+    lr=init*math.pow(0.2, optim_factor)
+    if warm==True and epoch<=2:
+        lr=0.01
+    return lr
 
 def get_hms(seconds):
     m, s = divmod(seconds, 60)

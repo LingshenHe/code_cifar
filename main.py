@@ -25,11 +25,12 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning_rate')
 parser.add_argument('--net_type', default='SR_wrn28_10_d8d8d8', type=str, help='model')
 parser.add_argument('--depth', default=28, type=int, help='depth of model')
 parser.add_argument('--widen_factor', default=10, type=int, help='width of model')
-parser.add_argument('--dropout', default=0.0, type=float, help='dropout_rate')
-parser.add_argument('--dataset', default='cifar10', type=str, help='dataset = [cifar10/cifar100]')
+parser.add_argument('--dropout', default=0.3, type=float, help='dropout_rate')
+parser.add_argument('--dataset', default='cifar100', type=str, help='dataset = [cifar10/cifar100]')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--testOnly', '-t', action='store_true', help='Test mode with the saved model')
 parser.add_argument('--fixparams', default=False, help='fix parameters of model')
+parser.add_argument('--warm', default=False)
 args = parser.parse_args()
 
 # Hyper Parameter settings
@@ -65,7 +66,12 @@ elif(args.dataset == 'cifar100'):
     num_classes = 100
 
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
-testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
+testloader = torch.utils.data.DataLoader(testset, batch_size=512, shuffle=False, num_workers=2)
+
+
+
+
+
 
 # Return network & file name
 def getNetwork(args):
@@ -91,8 +97,20 @@ def getNetwork(args):
         net=SR_wrn28_10_d8d4d4(dropout_rate=args.dropout,fixparams=args.fixparams)
         file_name='SR_wrn28_10_d8d4d4'+str(args.fixparams)+'dropout'+str(args.dropout)
     elif (args.net_type=='SR_wrn28_10_d8d8d8'):
-        net=SR_wrn28_10_d8d8d8(dropout_rate=args.dropout,fixparams=args.fixparams)
+        net=SR_wrn28_10_d8d8d8(dropout_rate=args.dropout,fixparams=args.fixparams, num_classes=num_classes)
         file_name='SR_wrn28_10_d8d8d8'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type =='wrn28_10_d8d8d8'):
+        net =wrn28_10_d8d8d8(dropout_rate=args.dropout,fixparams=args.fixparams, num_classes=num_classes)
+        file_name='wrn28_10_d8d8d8'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type == 'scaleresnet18'):
+        net=SResNet18()
+        file_name='scaleresnet18'
+    elif (args.net_type=='SR_wrn28_10_d8d4d1'):
+        net=SR_wrn28_10_d8d4d1(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='SR_wrn28_10_d8d4d1'+str(args.fixparams)+'dropout'+str(args.dropout)
+    elif (args.net_type=='SR_wrn28_10_d8d8d4'):
+        net=SR_wrn28_10_d8d8d4(dropout_rate=args.dropout,fixparams=args.fixparams)
+        file_name='SR_wrn28_10_d8d8d4'+str(args.fixparams)+'dropout'+str(args.dropout)
     else:
         print('Error : Network should be either [LeNet / VGGNet / ResNet / Wide_ResNet/wrn28_10_d8d4d1')
         sys.exit(0)
@@ -132,6 +150,7 @@ if (args.testOnly):
 
         acc = 100.*correct/total
         print("| Test Result\tAcc@1: %.2f%%" %(acc))
+        print('Net: '+args.net_type)
 
     sys.exit(0)
 
@@ -151,14 +170,23 @@ else:
     net, file_name = getNetwork(args)
     #if (args.net_type !='wrn28_10_d8d4d1'):
      #   net.apply(conv_init)
-model_parameters = filter(lambda p: p.requires_grad, net.layer3.parameters())
+
+
+
+
+
+model_parameters = filter(lambda p: p.requires_grad, net.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
 if use_cuda:
     net.cuda()
     net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
     cudnn.benchmark = True
-
+print('ok')
 criterion = nn.CrossEntropyLoss()
+
+
+
+
 
 # Training
 def train(epoch):
@@ -168,9 +196,9 @@ def train(epoch):
     train_loss = 0
     correct = 0
     total = 0
-    optimizer = optim.SGD(net.parameters(), lr=cf.learning_rate(args.lr, epoch), momentum=0.9, weight_decay=5e-4)
+    optimizer = optim.SGD(net.parameters(), lr=cf.learning_rate(args.lr, epoch, False), momentum=0.9, weight_decay=5e-4)
 
-    print('\n=> Training Epoch #%d, LR=%.4f' %(epoch, cf.learning_rate(args.lr, epoch)))
+    print('\n=> Training Epoch #%d, LR=%.4f' %(epoch, cf.learning_rate(args.lr, epoch, False)))
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda() # GPU settings
@@ -225,12 +253,12 @@ def test(epoch):
                     'acc':acc,
                     'epoch':epoch,
             }
-            if not os.path.isdir('/home/lshe/checkpoint'):
-                os.mkdir('/home/lshe/checkpoint')
-            save_point = '/home/lshe/checkpoint/'+args.dataset+os.sep
+            if not os.path.isdir('/home1/lshe/checkpoint'):
+                os.mkdir('/home1/lshe/checkpoint')
+            save_point = '/home1/lshe/checkpoint/'+args.dataset+os.sep
             if not os.path.isdir(save_point):
                 os.mkdir(save_point)
-            torch.save(state, save_point+file_name+'.t7')
+            # torch.save(state, save_point+file_name+'.t7')
             best_acc = acc
 
 print('\n[Phase 3] : Training model')

@@ -20,6 +20,7 @@ __all__ = [
     "wrn28_7_d8d4d1",
     "wrn28_10_c8c4c1",
     "wrn28_10_d1d1d1",
+    "wrn28_10_d8d8d8"
 ]
 
 
@@ -457,6 +458,16 @@ def wrn28_10_d1d1d1(**kwargs):
 
     """
     return Wide_ResNet(28, 10, 0.3, initial_stride=1, N=1, f=True, r=0, **kwargs)
+
+
+def wrn28_10_d8d8d8(**kwargs):
+    """Constructs a Wide ResNet 28-10 model
+
+    The model's block are respectively D8, D4 and D1 equivariant.
+
+    """
+    return Wide_ResNet(depth=28, widen_factor=10, initial_stride=1, N=8, f=True, r=0, **kwargs)
+
 
 
 if __name__ == "__main__":

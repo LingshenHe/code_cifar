@@ -6,7 +6,7 @@ import time
 import math
 from .utils import *
 import torch.nn.functional as F
-__all__=['SR_wrn28_10_d8d4d4', 'SR_wrn28_10_d8d8d8']
+__all__=['SR_wrn28_10_d8d4d4', 'SR_wrn28_10_d8d8d8','SR_wrn28_10_d8d4d1', 'SR_wrn28_10_d8d8d4']
 
 
 
@@ -65,23 +65,28 @@ class WideBasic(nn.Module):
         
         self.bn1 = group.norm(self.in_type)
         self.relu1 = nn.ReLU( inplace=True)
-        self.conv1 = group.conv_fast( self.in_type, inner_type)
+        if(group.n<=4):
+            self.conv1 = group.conv3x3(self.in_type, inner_type)
+        else:
+            self.conv1 = group.conv5x5(self.in_type, inner_type)
         
         self.bn2 = group.norm(inner_type)
         self.relu2 = nn.ReLU( inplace=True)
-        
-        # self.dropout = enn.PointwiseDropout(inner_type, p=dropout_rate)
-        
-        self.conv2 = group.conv_fast( inner_type, self.out_type, stride=stride)
-        
+        self.drop=dropout_rate
+        if(group.n<=4):
+            self.conv2 = group.conv3x3( inner_type, self.out_type, stride=stride)
+        else:
+            self.conv2= group.conv5x5(inner_type, self.out_type, stride=stride)
         self.shortcut = None
         if stride != 1 or self.in_type != self.out_type:
-            self.shortcut = group.conv([0], self.in_type, self.out_type, stride=stride)
+            # self.shortcut = group.conv([0], self.in_type, self.out_type, stride=stride)
+            self.shortcut = group.conv1x1(self.in_type, self.out_type, stride=stride)
     
     def forward(self, x):
         x_n = self.relu1(self.bn1(x))
         out = self.relu2(self.bn2(self.conv1(x_n)))
-        # out = self.dropout(out)
+        if self.drop > 0:
+            out = F.dropout(out, p=self.drop, training=self.training)
         out = self.conv2(out)
         
         if self.shortcut is not None:
@@ -191,37 +196,40 @@ class SR_Wide_ResNet(torch.nn.Module):
         # the next submodule to build
         self._in_type = r2
         
-        self.conv1 = self.grouplist[0].conv_fast( r1, r2)
+        self.conv1 = self.grouplist[0].conv5x5( r1, r2)
         self.layer1 = self._wide_layer(WideBasic, nStages[1], n, dropout_rate, stride=initial_stride)
         if self._r >= 2:
             
             self.restrict1 = self.grouplist[0].Restrictlayer(self._in_type)
             self._in_type=[self._in_type[0], self._in_type[1]*2]
-            self.grouplist.append(Group(N//2, self._f))
-            self._N=N//2
+            self.grouplist.append(Group(self._N//2, self._f))
+            self._N=self._N//2
         else:
             self.restrict1 = lambda x: x
         
         self.layer2 = self._wide_layer(WideBasic, nStages[2], n, dropout_rate, stride=2)
         if self._r == 3:
         
-            self.restrict2 = nn.Sequential(self.grouplist[-1].Restrictlayer(self._in_type), GroupRestrict(2,self._in_type[1]*2))
+            self.restrict2 = nn.Sequential(self.grouplist[-1].Restrictlayer(self._in_type), GroupRestrict(2,self._in_type[1]*2,True))
             self._in_type=['regular', 4*self._in_type[1]]
+            self.grouplist.append(Group(self._N//4, self._f))
+            self._N=self._N//4
         elif self._r == 1:
             self.restrict2 = self.grouplist[0].Restrictlayer(self._in_type)
             self._in_type=[self._in_type[0], self._in_type[1]*2]
-            self.grouplist.append(Group(N//2, self._f))
-            self._N=N//2
+            self.grouplist.append(Group(self._N//2, self._f))
+            self._N=self._N//2
         else:
             self.restrict2 = lambda x: x
         
         # last layer maps to a trivial (invariant) feature map
         self.layer3 = self._wide_layer(WideBasic, nStages[3], n, dropout_rate, stride=2, totrivial=True)
-        
-        self.bn = self.grouplist[-1].norm(self._in_type, momentum=0.9)
+        # self.layer3 = self._wide_layer(WideBasic, nStages[3], n, dropout_rate, stride=2)
+        self.bn = self.grouplist[-1].norm(self._in_type, momentum=0.1)
         self.relu = nn.ReLU( inplace=True)
+        self.pool= self.grouplist[-1].GroupPool(self._in_type)
+        self._in_type=['trivial', self._in_type[1]]
         self.linear = torch.nn.Linear(self._in_type[1]*self.grouplist[-1].rep[self._in_type[0]].dim, num_classes)
-        
         # for name, module in self.named_modules():
         #     if isinstance(module, enn.R2Conv):
         #         if deltaorth:
@@ -252,7 +260,7 @@ class SR_Wide_ResNet(torch.nn.Module):
         inner_type = FIELD_TYPE["regular"](self.grouplist[-1], planes, fixparams=self._fixparams)
         
         if totrivial:
-            out_type = FIELD_TYPE["trivial"](self.grouplist[-1], planes, fixparams=self._fixparams)
+            out_type = FIELD_TYPE["regular"](self.grouplist[-1], planes*4, fixparams=self._fixparams)
         else:
             out_type = FIELD_TYPE["regular"](self.grouplist[-1], planes, fixparams=self._fixparams)
         
@@ -292,13 +300,13 @@ class SR_Wide_ResNet(torch.nn.Module):
         out = self.layer3(self.restrict2(out))
         out = self.bn(out)
         out = self.relu(out)
+        out = self.pool(out)
         
         # extract the tensor from the GeometricTensor to use the common Pytorch operations
         # print(self._in_type[1]*self.grouplist[-1].dim)
 
         
         b, c, w, h = out.shape
-        # print(b,c,w,h)
         out = F.avg_pool2d(out, (w, h))
         
         out = out.view(out.size(0), -1)
@@ -314,7 +322,7 @@ class SR_Wide_ResNet(torch.nn.Module):
 def SR_wrn28_10_d8d4d4(**kwargs):
     """Constructs a Wide ResNet 28-10 model
 
-    The model's block are respectively D8, D4 and D1 equivariant.
+    The model's block are respectively D8, D4 and D4 equivariant.
 
     """
     return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=2, **kwargs)
@@ -327,8 +335,27 @@ def SR_wrn28_10_d8d8d8(**kwargs):
     """
     return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=0, **kwargs)
 
+
+def SR_wrn28_10_d8d4d1(**kwargs):
+    """Constructs a Wide ResNet 28-10 model
+
+    The model's block are respectively D8, D4 and D1 equivariant.
+
+    """
+    return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=3, **kwargs)
+
+
+def SR_wrn28_10_d8d8d4(**kwargs):
+    """Constructs a Wide ResNet 28-10 model
+
+    The model's block are respectively D8, D4 and D1 equivariant.
+
+    """
+    return SR_Wide_ResNet(28, 10, initial_stride=1, N=8, f=True, r=1, **kwargs)
+
+
 def test():
-    net=SR_wrn28_10_d8d8d8(dropout_rate=0.)
+    net=SR_wrn28_10_d8d8d4(dropout_rate=0.)
     # model_parameters = filter(lambda p: p.requires_grad, net.conv1.parameters())
     # params = sum([np.prod(p.size()) for p in model_parameters])
     # print(params)
@@ -338,9 +365,18 @@ def test():
     # model_parameters = filter(lambda p: p.requires_grad, net.layer2.parameters())
     # params = sum([np.prod(p.size()) for p in model_parameters])
     # print(params)
-    model_parameters = filter(lambda p: p.requires_grad, net.layer3.parameters())
+    model_parameters = filter(lambda p: p.requires_grad, net.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print(params)
     print(len(net.grouplist))
     
 #     # class MNISTMODEL()
+
+# net=SR_wrn28_10_d8d4d1(dropout_rate=0.)
+# test()
+# x=torch.randn(2,3,28,28)
+# net=SR_wrn28_10_d8d4d4(dropout_rate=0.)
+# y=net(x)
+test()
+
+
