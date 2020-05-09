@@ -225,10 +225,11 @@ class SR_Wide_ResNet(torch.nn.Module):
         # last layer maps to a trivial (invariant) feature map
         self.layer3 = self._wide_layer(WideBasic, nStages[3], n, dropout_rate, stride=2, totrivial=True)
         # self.layer3 = self._wide_layer(WideBasic, nStages[3], n, dropout_rate, stride=2)
-        self.bn = self.grouplist[-1].norm(self._in_type, momentum=0.1)
-        self.relu = nn.ReLU( inplace=True)
         self.pool= self.grouplist[-1].GroupPool(self._in_type)
         self._in_type=['trivial', self._in_type[1]]
+        self.bn = self.grouplist[-1].norm(self._in_type, momentum=0.1)
+        self.relu = nn.ReLU( inplace=True)
+        
         self.linear = torch.nn.Linear(self._in_type[1]*self.grouplist[-1].rep[self._in_type[0]].dim, num_classes)
         # for name, module in self.named_modules():
         #     if isinstance(module, enn.R2Conv):
@@ -298,9 +299,10 @@ class SR_Wide_ResNet(torch.nn.Module):
         out = self.layer2(self.restrict1(out))
         
         out = self.layer3(self.restrict2(out))
+        out = self.pool(out)
         out = self.bn(out)
         out = self.relu(out)
-        out = self.pool(out)
+        
         
         # extract the tensor from the GeometricTensor to use the common Pytorch operations
         # print(self._in_type[1]*self.grouplist[-1].dim)
